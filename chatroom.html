@@ -3,100 +3,183 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Local Chat Room</title>
+<title>Party Chat Room</title>
 <style>
-  body {
-    margin: 0;
-    background: #0f0f0f;
-    color: #fff;
-    font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  #chat-box {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    border-bottom: 1px solid #333;
-  }
-  #chat-box div {
-    margin: 6px 0;
-  }
-  #input-area {
-    display: flex;
-    padding: 10px;
-    background: #1a1a1a;
-  }
-  #username, #message {
-    background: #222;
-    border: none;
-    color: white;
-    padding: 10px;
-    margin-right: 5px;
-    border-radius: 5px;
-  }
-  #username { width: 120px; }
-  #message { flex: 1; }
-  #send {
-    background: #444;
-    border: none;
-    color: white;
-    padding: 10px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  #send:hover { background: #666; }
+body {
+  margin:0;
+  background:#0f0f0f;
+  color:white;
+  font-family: Arial, sans-serif;
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+}
+#chat-box {
+  flex:1;
+  overflow-y:auto;
+  padding:10px;
+  border-bottom:1px solid #333;
+}
+#chat-box div { margin:5px 0; }
+#input-area {
+  display:flex;
+  padding:10px;
+  background:#1a1a1a;
+}
+#username, #party-code, #message, #party-type {
+  background:#222;
+  border:none;
+  color:white;
+  padding:10px;
+  margin-right:5px;
+  border-radius:5px;
+}
+#username { width:120px; }
+#party-code { width:100px; }
+#message { flex:1; }
+#send, #create, #join, #join-random {
+  background:#444;
+  border:none;
+  color:white;
+  padding:10px 15px;
+  border-radius:5px;
+  cursor:pointer;
+}
+#send:hover, #create:hover, #join:hover, #join-random:hover { background:#666; }
 </style>
 </head>
 <body>
-  <div id="chat-box"></div>
-  <div id="input-area">
-    <input type="text" id="username" placeholder="Username">
-    <input type="text" id="message" placeholder="Type a message...">
-    <button id="send">Send</button>
-  </div>
+
+<div>
+  Username: <input type="text" id="username" placeholder="Username">
+  Party Type: 
+  <select id="party-type">
+    <option value="public">Public</option>
+    <option value="private">Private</option>
+  </select>
+  Party Code: <input type="text" id="party-code" placeholder="Party Code">
+  <button id="create">Create Party</button>
+  <button id="join">Join Party</button>
+  <button id="join-random">Join Random</button>
+</div>
+
+<div id="chat-box"></div>
+
+<div id="input-area">
+  <input type="text" id="message" placeholder="Type a message...">
+  <button id="send">Send</button>
+</div>
 
 <script>
+// --- Party Chat Logic ---
 const chatBox = document.getElementById("chat-box");
-const username = document.getElementById("username");
-const message = document.getElementById("message");
-const send = document.getElementById("send");
+const usernameInput = document.getElementById("username");
+const partyInput = document.getElementById("party-code");
+const messageInput = document.getElementById("message");
+const sendBtn = document.getElementById("send");
+const createBtn = document.getElementById("create");
+const joinBtn = document.getElementById("join");
+const joinRandomBtn = document.getElementById("join-random");
+const partyTypeSelect = document.getElementById("party-type");
 
-send.onclick = sendMessage;
-message.addEventListener("keypress", e => {
-  if (e.key === "Enter") sendMessage();
-});
+const filterWords = ["badword","foo","bar"];
 
-function sendMessage() {
-  if (!username.value.trim() || !message.value.trim()) return;
-  const msg = `${username.value}: ${message.value}`;
-  addMessage(msg);
-  saveMessage(msg);
-  message.value = "";
-}
+let party = null;
+let username = "";
+let partyMembers = [];
+let partyMessages = [];
+let partyType = "public";
 
-function addMessage(text) {
+function generatePartyCode(){ return Math.random().toString(36).substr(2,5).toUpperCase(); }
+
+function appendMessage(text){
+  let filtered = text.split(" ").map(w => filterWords.includes(w.toLowerCase()) ? "***" : w).join(" ");
   const div = document.createElement("div");
-  div.textContent = text;
+  div.textContent = filtered;
   chatBox.appendChild(div);
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function saveMessage(text) {
-  const messages = JSON.parse(localStorage.getItem("chat")) || [];
-  messages.push(text);
-  localStorage.setItem("chat", JSON.stringify(messages));
+function sendMessage(){
+  const text = messageInput.value.trim();
+  if(!text || !username || !party) return;
+  const msg = `${username}: ${text}`;
+  partyMessages.push(msg);
+  appendMessage(msg);
+  messageInput.value = "";
+  broadcastParty();
 }
 
-function loadMessages() {
-  const messages = JSON.parse(localStorage.getItem("chat")) || [];
-  chatBox.innerHTML = "";
-  messages.forEach(m => addMessage(m));
+function broadcastParty(){
+  const key = partyType === "public" ? "party-public-"+party : "party-private-"+party;
+  localStorage.setItem(key, JSON.stringify({
+    members: partyMembers,
+    messages: partyMessages
+  }));
 }
 
-window.addEventListener("storage", loadMessages);
-loadMessages();
+function loadParty(){
+  const key = partyType === "public" ? "party-public-"+party : "party-private-"+party;
+  const data = JSON.parse(localStorage.getItem(key) || "{}");
+  if(data.members) partyMembers = data.members;
+  if(data.messages) {
+    chatBox.innerHTML = "";
+    partyMessages = data.messages;
+    partyMessages.forEach(m => appendMessage(m));
+  }
+}
+
+// Create party
+createBtn.onclick = ()=>{
+  username = usernameInput.value.trim();
+  partyType = partyTypeSelect.value;
+  if(!username){ alert("Enter username"); return; }
+  party = generatePartyCode();
+  partyMembers = [username];
+  partyMessages = [];
+  appendMessage(`Party created! Code: ${party} (${partyType})`);
+  broadcastParty();
+  alert(`Share this code to invite: ${party} (Type: ${partyType})`);
+}
+
+// Join party
+joinBtn.onclick = ()=>{
+  username = usernameInput.value.trim();
+  partyType = partyTypeSelect.value;
+  party = partyInput.value.trim().toUpperCase();
+  if(!username || !party){ alert("Enter username and party code"); return; }
+  loadParty();
+  if(!partyMembers.includes(username)) partyMembers.push(username);
+  appendMessage(`${username} joined the party`);
+  broadcastParty();
+}
+
+// Join random public party
+joinRandomBtn.onclick = ()=>{
+  username = usernameInput.value.trim();
+  if(!username){ alert("Enter username"); return; }
+  partyType = "public";
+  // Find all public parties in localStorage
+  const keys = Object.keys(localStorage).filter(k=>k.startsWith("party-public-"));
+  if(keys.length === 0){ alert("No public parties available"); return; }
+  party = keys[Math.floor(Math.random()*keys.length)].replace("party-public-","");
+  loadParty();
+  if(!partyMembers.includes(username)) partyMembers.push(username);
+  appendMessage(`${username} joined the party randomly!`);
+  broadcastParty();
+}
+
+// Send message
+sendBtn.onclick = sendMessage;
+messageInput.addEventListener("keypress", e=>{
+  if(e.key === "Enter") sendMessage();
+});
+
+// Listen for localStorage updates (simulate multi-user)
+window.addEventListener("storage", (e)=>{
+  const key = partyType === "public" ? "party-public-"+party : "party-private-"+party;
+  if(e.key === key) loadParty();
+});
 </script>
 </body>
 </html>
