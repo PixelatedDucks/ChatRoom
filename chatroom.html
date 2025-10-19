@@ -43,12 +43,14 @@ Party Code: <input type="text" id="party-code" placeholder="Party Code">
 // --- Config ---
 const filterWords = ["badword","foo","bar"];
 const ws = new WebSocket("wss://echo.websocket.events"); // Public echo server
+const messageSound = new Audio("https://www.soundjay.com/button/beep-07.mp3"); // short beep on message
 
 let username = "";
 let party = null;
 let partyType = "public";
 let partyMembers = [];
 let partyMessages = [];
+let publicRooms = [];
 
 // --- Elements ---
 const chatBox = document.getElementById("chat-box");
@@ -66,7 +68,11 @@ function appendMessage(text){
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// Broadcast current party state to server
+function playMessageSound(){
+  messageSound.currentTime = 0;
+  messageSound.play();
+}
+
 function broadcastParty(){
   if(!party) return;
   const payload = JSON.stringify({
@@ -77,9 +83,11 @@ function broadcastParty(){
     messages: partyMessages
   });
   ws.send(payload);
+  if(partyType==="public"){
+    ws.send(JSON.stringify({type:"roomAnnounce", party}));
+  }
 }
 
-// Load party messages
 function loadPartyData(data){
   partyMembers = data.members || [];
   partyMessages = data.messages || [];
@@ -92,8 +100,12 @@ ws.onopen = ()=>console.log("Connected to WebSocket server");
 ws.onmessage = e=>{
   try {
     const data = JSON.parse(e.data);
-    if(data.party === party){
+    if(data.type==="partyUpdate" && data.party===party){
       loadPartyData(data);
+      playMessageSound();
+    }
+    if(data.type==="roomAnnounce"){
+      if(!publicRooms.includes(data.party)) publicRooms.push(data.party);
     }
   } catch(err){ }
 };
@@ -108,7 +120,7 @@ function createParty(){
   partyMessages = [];
   appendMessage(`Party created! Code: ${party} (${partyType})`);
   broadcastParty();
-  alert(`Share this code to invite: ${party} (Type: ${partyType})`);
+  if(partyType==="public") alert(`Share this code to invite: ${party} (Public Party)`);
 }
 
 function joinParty(){
@@ -116,7 +128,6 @@ function joinParty(){
   partyType = partyTypeSelect.value;
   party = partyInput.value.trim().toUpperCase();
   if(!username || !party) return alert("Enter username and party code");
-  // Join logic: just append user to party members and broadcast
   if(!partyMembers.includes(username)) partyMembers.push(username);
   appendMessage(`${username} joined the party`);
   broadcastParty();
@@ -126,12 +137,11 @@ function joinRandomParty(){
   username = usernameInput.value.trim();
   if(!username) return alert("Enter username");
   partyType = "public";
-  // Request server for random public party (we'll simulate using echo server)
-  // Since echo server doesn’t really store parties, just generate one random code
-  party = Math.random().toString(36).substr(2,5).toUpperCase();
+  if(publicRooms.length===0) return alert("No public rooms available");
+  party = publicRooms[Math.floor(Math.random()*publicRooms.length)];
   partyMembers = [username];
   partyMessages = [];
-  appendMessage(`${username} joined random party ${party}`);
+  appendMessage(`${username} joined random public party ${party}`);
   broadcastParty();
 }
 
@@ -142,6 +152,7 @@ function sendMessage(){
   const msg = `${username}: ${text}`;
   partyMessages.push(msg);
   appendMessage(msg);
+  playMessageSound();
   messageInput.value = "";
   broadcastParty();
 }
